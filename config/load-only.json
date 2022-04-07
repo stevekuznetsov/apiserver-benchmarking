@@ -1,0 +1,20 @@
+{
+  "seed": {
+    "fill_size": 10000,
+    "count": 10000
+  },
+  "setup": {
+    "storage_backend": "etcd3"
+  },
+  "interact": {
+    "proportions": {
+      "create": 1,
+      "get": 40,
+      "list": 0,
+      "update": 2,
+      "delete": 1
+    },
+    "parallelism": 5,
+    "operations": 10000
+  }
+}
