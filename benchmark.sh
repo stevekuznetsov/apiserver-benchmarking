@@ -32,12 +32,11 @@ function cleanup() {
   for program in etcd apiserver; do
     for profile in heap profile; do
       profile_dir="${workdir}/profiles/${program}/${profile}"
-      ./benchmark/bin/pprof-digest --input "${profile_dir}" --output "${profile_dir}/pprof.json"
+      ./bin/pprof-digest --input "${profile_dir}" --output "${profile_dir}/pprof.json"
     done
   done
   sudo chmod a+rw --recursive "${workdir}"
   sudo chown stevekuznetsov:stevekuznetsov --recursive "${workdir}"
-  echo rm -rf "${workdir}"
   echo "Done!"
 }
 trap cleanup EXIT
@@ -48,10 +47,8 @@ openssl genrsa -out "${workdir}/keys/service-account-key.pem" 4096
 openssl req -new -x509 -days 365 -key "${workdir}/keys/service-account-key.pem" -sha256 -out "${workdir}/keys/service-account.pem" -subj '/C=US/ST=Washington/L=Seattle/O=Kubernetes Dev Inc/OU=Storage/CN=crdb.storage.k8s.io'
 
 echo "Compiling utilities..."
-for utility in cadvisor pprof-fetch pprof-digest runner; do
-  go build -o "./benchmark/bin/${utility}" "./benchmark/${utility}/main.go"
-done
-bindir="$( realpath ./benchmark/bin )"
+GOPATH=/home/stevekuznetsov/code/stevekuznetsov/apiserver-benchmarking/ make build
+bindir="$( realpath ./bin )"
 
 echo "Starting cAdvisor..."
 # we need to run cAdvisor + podman, which is not yet supported ...
@@ -60,6 +57,7 @@ echo "Starting cAdvisor..."
 # cd cadvisor
 # git pull origin/pull/3021/merge:podman
 # git checkout podman
+# local hacks ...
 # make build
 # chmod +x cadvisor
 # --- (as root)
@@ -68,7 +66,7 @@ echo "Starting cAdvisor..."
 # cadvisor &
 pushd /home/stevekuznetsov/code/google/cadvisor/src/github.com/google/cadvisor
 if [[ -n "${REBUILD_CADVISOR:-}" ]]; then
-  make build
+  GOPATH=/home/stevekuznetsov/code/google/cadvisor/ make build
 fi
 ./cadvisor &
 popd
@@ -88,17 +86,17 @@ if [[ -n "${RELOAD_IMAGE:-}" ]]; then
   if [[ -n "${apiserver_image:-}" ]]; then
     podman rmi "${apiserver_image}"
   fi
-  podman load --input _output/release-images/amd64/kube-apiserver.tar
+  podman load --input /home/stevekuznetsov/code/kcp-dev/kubernetes/src/github.com/kcp-dev/kubernetes/_output/release-images/amd64/kube-apiserver.tar
 fi
 apiserver_image="$( resolve_apiserver_image )"
 echo "Running with apiserver image ${apiserver_image}."
 
 echo "Starting pod..."
-podman pod create --name benchmark
+podman pod create --name benchmark --publish 8080
 if [[ "$( jq '.setup?.storage_backend?' --raw-output <"${config}" )" == "crdb" ]]; then
   podman run -dt --pod benchmark --name etcd docker.io/cockroachdb/cockroach:v21.2.8 start-single-node --sql-addr localhost:2379 --advertise-sql-addr localhost:2379 --insecure
 else
-  podman run -dt --pod benchmark --name etcd quay.io/coreos/etcd:v3.5.1 etcd --enable-pprof
+  podman run -dt --pod benchmark --name etcd quay.io/coreos/etcd:v3.5.1 etcd --enable-pprof --quota-backend-bytes 6710886400
 fi
 podman run -dt --pod benchmark --name apiserver \
   --volume "${workdir}/tokens:/tokens:z" \
@@ -108,7 +106,7 @@ podman run -dt --pod benchmark --name apiserver \
   --service-account-key-file=/var/lib/kubernetes/service-account.pem \
   --service-account-signing-key-file=/var/lib/kubernetes/service-account-key.pem \
   --service-account-issuer=kubernetes.default.svc.cluster.local \
-  --token-auth-file=/tokens/auth-tokens.csv $( ./benchmark/bin/runner --config "${config}" --print-apiserver-flags )
+  --token-auth-file=/tokens/auth-tokens.csv $( "${bindir}/runner" --config "${config}" --print-apiserver-flags )
 
 echo "Launching monitoring..."
 mkdir -p "${workdir}/profiles"
@@ -124,7 +122,7 @@ done
 mkdir "${workdir}/profiles/cadvisor"
 for container in etcd apiserver; do
   basepath="${workdir}/profiles/cadvisor/${container}"
-  ./benchmark/bin/cadvisor --cadvisor-url "http://localhost:8080" --container "${container}" --output "${basepath}.json" >"${basepath}.log" 2>&1 &
+  "${bindir}/cadvisor" --cadvisor-url "http://localhost:8080" --container "${container}" --output "${basepath}.json" >"${basepath}.log" 2>&1 &
 done
 
 echo "Saving profiles to ${workdir}/profiles/ ..."

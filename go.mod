@@ -1,4 +1,4 @@
-module github.com/stevekuznetsov/apiserver-benchmarking
+module apiserver-benchmarking
 
 go 1.17
 

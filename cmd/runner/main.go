@@ -86,6 +86,8 @@ type Seed struct {
 	FillSize int `json:"fill_size"`
 	// Count is the number of objects to seed the API server with.
 	Count int `json:"count,omitempty"`
+	// Parallelism determines how many parallel client connections to use
+	Parallelism int `json:"parallelism,omitempty"`
 }
 
 type Interact struct {
@@ -266,14 +268,39 @@ func seed(ctx context.Context, config Config, apiserverUrl, token string) (*inte
 	}
 	im.consume(ctx)
 
+	wg := &sync.WaitGroup{}
+	operations := make(chan struct{})
+	for i := 0; i < config.Seed.Parallelism; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case _, ok := <-operations:
+					if !ok {
+						return
+					}
+					if err := im.create(ctx); err != nil {
+						logrus.WithError(err).Error("failed to interact with the API server")
+					}
+				}
+			}
+		}()
+	}
+
 	start := time.Now()
 	for i := 0; i < config.Seed.Count; i++ {
 		start = display(i, config.Seed.Count, start)
-		if err := im.create(ctx); err != nil {
-			return im, fmt.Errorf("could not create pod: %w", err)
+		select {
+		case <-ctx.Done():
+			return im, ctx.Err()
+		case operations <- struct{}{}:
 		}
 	}
-
+	close(operations)
+	wg.Wait()
 	return im, nil
 }
 
@@ -477,7 +504,9 @@ func (i *interactionManager) create(ctx context.Context) error {
 	}, metav1.CreateOptions{})
 	duration := time.Since(before)
 	i.metricsChan <- durationDatapoint{method: "create", duration: duration}
-	i.sizeChan <- sizeDatapoint{timestamp: before, value: i.config.Seed.FillSize}
+	if err == nil {
+		i.sizeChan <- sizeDatapoint{timestamp: before, value: i.config.Seed.FillSize}
+	}
 	return err
 }
 
@@ -552,6 +581,8 @@ func (i *interactionManager) delete(ctx context.Context) error {
 	err := i.client.CoreV1().Pods(i.ns.Name).Delete(ctx, fmt.Sprintf("pod-%d", key), metav1.DeleteOptions{})
 	duration := time.Since(before)
 	i.metricsChan <- durationDatapoint{method: "delete", duration: duration}
-	i.sizeChan <- sizeDatapoint{timestamp: before, value: -i.config.Seed.FillSize}
+	if err == nil {
+		i.sizeChan <- sizeDatapoint{timestamp: before, value: -i.config.Seed.FillSize}
+	}
 	return err
 }

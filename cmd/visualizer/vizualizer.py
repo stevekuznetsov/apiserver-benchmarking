@@ -2,6 +2,7 @@
 
 import json
 import sys
+import os
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -14,12 +15,19 @@ from matplotlib import lines
 from matplotlib import patches
 from matplotlib.patheffects import withStroke
 
-if len(sys.argv) != 5:
+if len(sys.argv) != 3:
     print("Invalid arguments, usage:")
-    print("{} [cadvisor-output.json] [pprof-output.json] [config.json] [events.json]".format(sys.argv[0]))
+    print("{} [data-dir] [output-figure-dir]".format(sys.argv[0]))
     sys.exit(1)
 
-with open(sys.argv[1]) as cadvisor_file:
+data_dir = sys.argv[1]
+output_figure_dir = sys.argv[2]
+cadvisor_file_path = os.path.join(data_dir, "profiles", "cadvisor", "etcd.json")
+pprof_file_path = os.path.join(data_dir, "profiles", "etcd", "heap", "pprof.json")
+config_file_path = os.path.join(data_dir, "config.json")
+events_file_path = os.path.join(data_dir, "events.json")
+
+with open(cadvisor_file_path) as cadvisor_file:
     cadvisor_data = json.load(cadvisor_file)
 
 print("loaded cadvisor")
@@ -56,7 +64,7 @@ for item in cadvisor_data:
         item["memory"]["usage"] - item["memory"]["rss"] - item["memory"]["cache"] - item["memory"]["swap"])
     cadvisor_computed_data_series["inactive"].append(item["memory"]["working_set"] - item["memory"]["usage"])
 
-with open(sys.argv[2]) as pprof_file:
+with open(pprof_file_path) as pprof_file:
     pprof_data = json.load(pprof_file)
 
 print("loaded pprof")
@@ -70,12 +78,12 @@ for timestamp in pprof_data:
     for field in ["inuse_space"]:
         pprof_data_series[field].append(pprof_data[timestamp][field])
 
-with open(sys.argv[3]) as config_file:
+with open(config_file_path) as config_file:
     config_data = json.load(config_file)
 
 print("loaded config")
 
-with open(sys.argv[4]) as events_file:
+with open(events_file_path) as events_file:
     events_data = json.load(events_file)
 
 print("loaded events")
@@ -127,6 +135,7 @@ def plot_memory_use():
     plt.xlabel("Time")
     plt.ylabel("Memory")
     plt.title("Memory Use by CRDB")
+    fig.savefig(os.path.join(output_figure_dir, "{}_memory_use.png".format(config_data["setup"]["storage_backend"])), dpi=300)
     plt.show()
 
 
@@ -154,8 +163,8 @@ def plot_request_times():
     ax.yaxis.set_tick_params(labelleft=False, length=0)
     formatter = ticker.FuncFormatter(lambda y, pos: '')
     ax.yaxis.set_major_formatter(formatter)
-    max_y = max([max(events_data["metrics"][metric]) for metric in events_data["metrics"]]) / 1e6
-    ax.set_ylim(top=1.20 * max_y)
+    max_y = max([max(events_data["metrics"][metric]+[0]) for metric in events_data["metrics"]]) / 1e6
+    ax.set_ylim(bottom=0, top=1.20 * max_y)
     ax.set_xlim(left=-1, right=len(events_data["metrics"]))
     PAD = max_y * 0.01
     for label in ax.get_yticks()[1:-1]:
@@ -184,12 +193,14 @@ def plot_request_times():
     fig.text(0, 0.87, "Using {} as a backing store".format(config_data["setup"]["storage_backend"]), fontsize=20)
 
     source = 'Client write:read ratio of 1:{}, 1GiB initial database size.\n{} requests across {} parallel workers.'.format(
-        (config_data["interact"]["proportions"]["get"]+config_data["interact"]["proportions"]["list"])/(config_data["interact"]["proportions"]["create"]+config_data["interact"]["proportions"]["update"]+config_data["interact"]["proportions"]["delete"]),
-        config_data["seed"]["count"]+config_data["interact"]["operations"],
+        (config_data["interact"]["proportions"]["get"] + config_data["interact"]["proportions"]["list"]) / (
+                    config_data["interact"]["proportions"]["create"] + config_data["interact"]["proportions"][
+                "update"] + config_data["interact"]["proportions"]["delete"]),
+        config_data["seed"]["count"] + config_data["interact"]["operations"],
         config_data["interact"]["parallelism"]
     )
     fig.text(0.01, 0.02, source, color="#a2a2a2", fontsize=12)
-    fig.savefig("/home/stevekuznetsov/code/kcp-dev/kubernetes/src/github.com/kcp-dev/kubernetes/benchmark/figures/etcd_client_metrics.png", dpi=300)
+    fig.savefig(os.path.join(output_figure_dir, "{}_client_metrics.png".format(config_data["setup"]["storage_backend"])), dpi=300)
     plt.show()
 
 
