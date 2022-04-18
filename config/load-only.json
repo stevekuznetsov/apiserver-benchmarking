@@ -1,11 +1,12 @@
 {
   "seed": {
     "fill_size": 10000,
-    "count": 200000,
+    "count": 500000,
     "parallelism": 100
   },
   "setup": {
-    "storage_backend": "etcd3"
+    "storage_backend": "etcd3",
+    "output_dir": "/tmp/benchmark/etcd3"
   },
   "interact": {
     "proportions": {
@@ -16,6 +17,6 @@
       "delete": 1
     },
     "parallelism": 100,
-    "operations": 100000
+    "operations": 1000000
   }
 }

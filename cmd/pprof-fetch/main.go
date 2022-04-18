@@ -2,25 +2,22 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"apiserver-benchmarking/pkg/pprof"
 	"github.com/sirupsen/logrus"
 )
 
 type options struct {
 	baseUrl  string
+	name     string
 	metric   string
 	output   string
 	query    string
@@ -36,6 +33,7 @@ func defaultOptions() *options {
 
 func bindOptions(fs *flag.FlagSet, defaults *options) *options {
 	fs.StringVar(&defaults.baseUrl, "pprof-url", defaults.baseUrl, "URL at which pprof debug endpoints are exposed.")
+	fs.StringVar(&defaults.name, "name", defaults.name, "Name for the process we're profiling.")
 	fs.StringVar(&defaults.metric, "metric", defaults.metric, "Name for the metric we're profiling.")
 	fs.StringVar(&defaults.query, "query", defaults.query, "Query to pass to pprof.")
 	fs.StringVar(&defaults.header, "header", defaults.header, "Header to pass to pprof.")
@@ -47,6 +45,9 @@ func bindOptions(fs *flag.FlagSet, defaults *options) *options {
 func (o *options) validate() error {
 	if o.baseUrl == "" {
 		return errors.New("--pprof-url is required")
+	}
+	if o.name == "" {
+		return errors.New("--name is required")
 	}
 	if o.metric == "" {
 		return errors.New("--metric is required")
@@ -74,81 +75,31 @@ func main() {
 	if err := opts.validate(); err != nil {
 		logrus.WithError(err).Fatal("invalid options")
 	}
-	u, err := url.Parse(opts.baseUrl)
-	if err != nil {
-		logrus.WithError(err).Fatal("invalid url")
-	}
-	baseDir := filepath.Join(opts.output, opts.metric)
-	if err := os.MkdirAll(baseDir, 0777); err != nil {
-		logrus.WithError(err).Fatal("failed to create output directory")
-	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer func() {
 		cancel()
 	}()
 
-	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-	}
-	client := &http.Client{Transport: tr}
-
-	tick := time.Tick(opts.interval)
-	logrus.Infof("starting to poll at %s", opts.interval)
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick:
-			u.Path = "/debug/pprof/" + opts.metric
-			if opts.query != "" {
-				parts := strings.Split(opts.query, "=")
-				k, v := parts[0], parts[1]
-				q := u.Query()
-				q.Set(k, v)
-				u.RawQuery = q.Encode()
-			}
-			req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-			if err != nil {
-				logrus.WithError(err).Error("error creating request")
-				continue
-			}
-			if opts.header != "" {
-				parts := strings.Split(opts.header, "=")
-				k, v := parts[0], parts[1]
-				req.Header.Set(k, v)
-			}
-			resp, err := client.Do(req)
-			if err != nil {
-				logrus.WithError(err).Error("error fetching")
-				continue
-			}
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				logrus.WithError(err).Error("error reading body")
-				continue
-			}
-			if err := resp.Body.Close(); err != nil {
-				logrus.WithError(err).Error("error closing body")
-				continue
-			}
-			if resp.StatusCode != http.StatusOK {
-				logrus.WithError(err).Errorf("got %d, not 200: %v", resp.StatusCode, string(body))
-				continue
-			}
-			f, err := ioutil.TempFile(baseDir, "*")
-			if err != nil {
-				logrus.WithError(err).Error("error creating new file")
-				continue
-			}
-			if n, err := f.Write(body); err != nil {
-				logrus.WithError(err).Error("error writing file")
-			} else if n != len(body) {
-				logrus.Errorf("wrote %d bytes to file, expected %d", n, len(body))
-			}
-			if err := f.Close(); err != nil {
-				logrus.WithError(err).Error("error closing file")
-			}
+	query, header := map[string]string{}, map[string]string{}
+	if opts.query != "" {
+		parts := strings.Split(opts.query, "=")
+		if len(parts) != 2 {
+			logrus.Fatalf("invalid --query: %q, must be in k=v form", opts.query)
 		}
+		k, v := parts[0], parts[1]
+		query[k] = v
+	}
+	if opts.header != "" {
+		parts := strings.Split(opts.header, "=")
+		if len(parts) != 2 {
+			logrus.Fatalf("invalid --header: %q, must be in k=v form", opts.header)
+		}
+		k, v := parts[0], parts[1]
+		header[k] = v
+	}
+
+	if err := pprof.Fetch(ctx, logrus.WithFields(logrus.Fields{}), opts.baseUrl, opts.output, opts.name, opts.metric, opts.interval, query, header); err != nil {
+		logrus.WithError(err).Fatal("failed to fetch pprof metrics")
 	}
 }
