@@ -37,7 +37,7 @@ type Seed struct {
 
 type Interact struct {
 	// Throughput determines the ratio of different requests to make when testing request throughput and latency
-	Throughput *Proportions `json:"proportions,omitempty"`
+	Throughput *Proportions `json:"throughput,omitempty"`
 
 	// Selectivity configures the different types of requests to make when testing indexed selectivity
 	Selectivity *Selectivity `json:"selectivity,omitempty"`
@@ -57,5 +57,8 @@ type Proportions struct {
 }
 
 type Selectivity struct {
+	*Seed `json:",inline"`
 
+	// Minimum is the size of the most selective set we will query for.
+	Minimum int `json:"minimum,omitempty"`
 }

@@ -237,7 +237,7 @@ title = "<size:22><weight:bold>Kubernetes API Server Performance\n</></>" + \
         "<size:20>Comparing etcd3 and crdb as backing stores</>"
 flexitext(0, .98, title, va="top", xycoords='figure fraction', ax=fig.axes[0])
 
-proportions = config_data["crdb"]["interact"]["proportions"]
+proportions = config_data["crdb"]["interact"]["throughput"]
 source = 'Client write:read ratio of 1:{:,.0f}, {} initial database size.\n{} requests across {} parallel workers.'.format(
     (proportions["get"]) / (proportions["create"] + proportions["update"] + proportions["delete"]),
     format(config_data["crdb"]["seed"]["count"] * config_data["crdb"]["seed"]["fill_size"]),

@@ -20,7 +20,7 @@ import (
 )
 
 type options struct {
-	configFile   string
+	configFile string
 }
 
 func defaultOptions() *options {
@@ -113,7 +113,10 @@ func main() {
 	})
 
 	// we want to make sure that we've started fetching data for metrics before we start interacting
-	time.Sleep(5 * time.Second)
+	select {
+	case <-time.After(5 * time.Second):
+	case <-ctx.Done():
+	}
 
 	if cfg.Seed != nil {
 		logrus.Info("seeding the API server...")
@@ -126,7 +129,13 @@ func main() {
 
 	if cfg.Interact != nil {
 		logrus.Info("interacting with the API server...")
-		err := interaction.Interact(ctx, im, cfg.Interact)
+		var err error
+		if cfg.Interact.Throughput != nil {
+			err = interaction.Interact(ctx, im, cfg.Interact)
+		}
+		if cfg.Interact.Selectivity != nil {
+			err = interaction.Select(ctx, im, cfg.Interact)
+		}
 		logrus.Info("done interacting with the API server...")
 		if err != nil {
 			logrus.WithError(err).Fatal("failed to interact with the API server")

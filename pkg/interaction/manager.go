@@ -14,6 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
@@ -70,6 +71,9 @@ func NewManager(ctx context.Context, fillSize int, client *clientset.Clientset) 
 			"update": {},
 			"delete": {},
 		},
+		indexedMetrics: map[string]map[string][]time.Duration{
+			"list": {},
+		},
 	}
 	im.consume(ctx)
 
@@ -93,6 +97,7 @@ type interactionManager struct {
 	wg          *sync.WaitGroup
 
 	metrics        map[string][]time.Duration
+	indexedMetrics map[string]map[string][]time.Duration
 	sizeTimestamps []time.Time
 	sizes          []int
 }
@@ -104,6 +109,7 @@ type sizeDatapoint struct {
 
 type durationDatapoint struct {
 	method   string
+	index    string
 	duration time.Duration
 }
 
@@ -120,6 +126,9 @@ func (i *interactionManager) consume(ctx context.Context) {
 					return
 				}
 				i.metrics[metric.method] = append(i.metrics[metric.method], metric.duration)
+				if metric.index != "" {
+					i.indexedMetrics[metric.method][metric.index] = append(i.indexedMetrics[metric.method][metric.index], metric.duration)
+				}
 
 				var total int
 				fields := logrus.Fields{}
@@ -173,6 +182,7 @@ func (i *interactionManager) WriteOutput(outputDir string) error {
 		"sizeTimestamps": i.sizeTimestamps,
 		"sizes":          i.sizes,
 		"metrics":        i.metrics,
+		"indexedMetrics": i.indexedMetrics,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to serialize interaction events and metrics: %w", err)
@@ -186,6 +196,10 @@ func (i *interactionManager) WriteOutput(outputDir string) error {
 }
 
 func (i *interactionManager) create(ctx context.Context) error {
+	return i.createWithNodeName(ctx, "node")
+}
+
+func (i *interactionManager) createWithNodeName(ctx context.Context, nodeName string) error {
 	i.existingLock.Lock()
 	key := i.count
 	i.existing = append(i.existing, i.count)
@@ -209,7 +223,7 @@ func (i *interactionManager) create(ctx context.Context) error {
 			}},
 			ServiceAccountName:           i.sa.Name,
 			AutomountServiceAccountToken: pointer.BoolPtr(false),
-			NodeName:                     "node",
+			NodeName:                     nodeName,
 		},
 	}, metav1.CreateOptions{})
 	duration := time.Since(before)
@@ -245,19 +259,28 @@ func (i *interactionManager) get(ctx context.Context) error {
 }
 
 func (i *interactionManager) list(ctx context.Context) error {
+	duration, err := i.doList(ctx, fields.Everything())
+	select {
+	case i.metricsChan <- durationDatapoint{method: "list", duration: duration}:
+	case <-ctx.Done():
+	}
+	return err
+}
+
+func (i *interactionManager) doList(ctx context.Context, selector fields.Selector) (time.Duration, error) {
 	var duration time.Duration
 	var cont string
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return duration, ctx.Err()
 		default:
 		}
 		before := time.Now()
-		l, err := i.client.CoreV1().Pods(i.ns.Name).List(ctx, metav1.ListOptions{Limit: 5000, Continue: cont})
+		l, err := i.client.CoreV1().Pods(i.ns.Name).List(ctx, metav1.ListOptions{TimeoutSeconds: pointer.Int64(600), Continue: cont, FieldSelector: selector.String()})
 		duration = duration + time.Since(before)
 		if err != nil {
-			logrus.WithError(err).Warn("failed to read")
+			return duration, err
 		}
 		l.Items = nil // keep our memory use down
 		cont = l.Continue
@@ -265,11 +288,16 @@ func (i *interactionManager) list(ctx context.Context) error {
 			break
 		}
 	}
+	return duration, nil
+}
+
+func (i *interactionManager) listWithNodeName(ctx context.Context, nodeName string) error {
+	duration, err := i.doList(ctx, fields.OneTermEqualSelector("spec.nodeName", nodeName))
 	select {
-	case i.metricsChan <- durationDatapoint{method: "list", duration: duration}:
+	case i.metricsChan <- durationDatapoint{method: "list", index: nodeName, duration: duration}:
 	case <-ctx.Done():
 	}
-	return nil
+	return err
 }
 
 func (i *interactionManager) update(ctx context.Context) error {

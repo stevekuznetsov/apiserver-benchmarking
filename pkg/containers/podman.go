@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -284,9 +285,7 @@ func (m *manager) Deploy(cfg *config.Setup) error {
 		"--token-auth-file", "/tokens/auth-tokens.csv",
 		"--storage-backend", cfg.StorageBackend,
 		"--etcd-servers", dbServers,
-	}
-	if cfg.WatchCacheEnabled {
-		s.Command = append(s.Command, "--watch-cache")
+		"--watch-cache=" + strconv.FormatBool(cfg.WatchCacheEnabled),
 	}
 	if err := m.startContainer("apiserver", s); err != nil {
 		return err

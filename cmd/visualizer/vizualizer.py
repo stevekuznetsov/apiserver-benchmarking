@@ -193,9 +193,9 @@ def plot_request_times():
     fig.text(0, 0.87, "Using {} as a backing store".format(config_data["setup"]["storage_backend"]), fontsize=20)
 
     source = 'Client write:read ratio of 1:{}, 1GiB initial database size.\n{} requests across {} parallel workers.'.format(
-        (config_data["interact"]["proportions"]["get"] + config_data["interact"]["proportions"]["list"]) / (
-                    config_data["interact"]["proportions"]["create"] + config_data["interact"]["proportions"][
-                "update"] + config_data["interact"]["proportions"]["delete"]),
+        (config_data["interact"]["throughput"]["get"] + config_data["interact"]["throughput"]["list"]) / (
+                    config_data["interact"]["throughput"]["create"] + config_data["interact"]["throughput"][
+                "update"] + config_data["interact"]["throughput"]["delete"]),
         config_data["seed"]["count"] + config_data["interact"]["operations"],
         config_data["interact"]["parallelism"]
     )
