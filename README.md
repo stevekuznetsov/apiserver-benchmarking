@@ -98,6 +98,28 @@ $ jq --arg path "${image_tar}" '.setup.reload_api_server_image_from=$path' "orig
 $ ./bin/runner --config ./updated-config.json
 ```
 
+### Accessing The System During A Benchmark
+
+By default, the Kubernetes API server and the database are exposed to the host, along with one of the CRDB consoles.
+
+To make a request against the Kubernetes API, use:
+
+```
+$ kubectl --insecure-skip-tls-verify --server https://$( podman port apiserver 6443/tcp ) --token admin-token get ns
+```
+
+To access the CockroachDB SQL shell:
+
+```
+$ podman exec -it database0 cockroach sql --insecure
+```
+
+To access the CockroachDB console:
+
+```
+$ firefox http://$( podman port database0 8080/tcp )
+```
+
 ## Generating Visualizations
 
 In order to generate the visualizations, you will need Python 3 and the following libraries:

@@ -118,7 +118,7 @@ func main() {
 
 	// we want to make sure that we've started fetching data for metrics before we start interacting
 	select {
-	case <-time.After(25 * time.Second):
+	case <-time.After(5 * time.Second):
 	case <-ctx.Done():
 	}
 
