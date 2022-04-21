@@ -23,8 +23,6 @@ function cleanup() {
 
   mv "${tempdir}/config.json" "${workdir}"
   rm -rf "${tempdir}"
-  chmod a+rw --recursive "${workdir}"
-  chown stevekuznetsov:stevekuznetsov --recursive "${workdir}"
   echo "Done!"
 }
 trap cleanup EXIT
@@ -46,17 +44,16 @@ fi
 
 echo "Starting cAdvisor..."
 # we need to run cAdvisor + podman, which is not yet supported ...
+# first, we need to enable our root-less podman socket
+# systemctl --user enable podman
+# systemctl --user start podman
 # so, we need to compile it ourselves and what-not
 # git clone git@github.com:google/cadvisor.git
 # cd cadvisor
 # git pull origin/pull/3021/merge:podman
 # git checkout podman
-# local hacks ...
 # make build
 # chmod +x cadvisor
-# --- (as root)
-# dnf install -y podman podman-docker
-# systemctl start podman.service
 # cadvisor &
 pushd /home/stevekuznetsov/code/google/cadvisor/src/github.com/google/cadvisor
 if [[ -n "${REBUILD_CADVISOR:-}" ]]; then

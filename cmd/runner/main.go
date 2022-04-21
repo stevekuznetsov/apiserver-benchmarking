@@ -102,7 +102,11 @@ func main() {
 	if cfg.Seed != nil {
 		fillSize = cfg.Seed.FillSize // TODO: poor factoring here ... can we move all size info to seed step?
 	}
-	im, err := interaction.NewManager(ctx, fillSize, client)
+	partitions := 1
+	if cfg.Interact != nil && cfg.Interact.Watch != nil {
+		partitions = cfg.Interact.Watch.Partitions
+	}
+	im, err := interaction.NewManager(ctx, fillSize, partitions, client)
 	if err != nil {
 		logrus.WithError(err).Fatal("could not create interaction manager")
 	}
@@ -114,7 +118,7 @@ func main() {
 
 	// we want to make sure that we've started fetching data for metrics before we start interacting
 	select {
-	case <-time.After(5 * time.Second):
+	case <-time.After(25 * time.Second):
 	case <-ctx.Done():
 	}
 
@@ -135,6 +139,9 @@ func main() {
 		}
 		if cfg.Interact.Selectivity != nil {
 			err = interaction.Select(ctx, im, cfg.Interact)
+		}
+		if cfg.Interact.Watch != nil {
+			err = interaction.Watch(ctx, im, cfg.Interact)
 		}
 		logrus.Info("done interacting with the API server...")
 		if err != nil {

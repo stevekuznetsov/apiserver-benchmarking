@@ -1,0 +1,17 @@
+{
+  "setup": {
+    "storage_backend": "etcd3",
+    "output_dir": "/tmp/benchmark/watch/etcd3"
+  },
+  "interact": {
+    "watch": {
+      "fill_size": 1000,
+      "count": 500000,
+      "parallelism": 100,
+      "partitions": 10,
+      "watchers_per_partition": 10,
+      "duration": "600s"
+    },
+    "parallelism": 100
+  }
+}

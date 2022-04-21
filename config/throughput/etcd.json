@@ -6,7 +6,7 @@
   },
   "setup": {
     "storage_backend": "etcd3",
-    "output_dir": "/tmp/benchmark/etcd3"
+    "output_dir": "/tmp/benchmark/throughput/etcd3"
   },
   "interact": {
     "throughput": {

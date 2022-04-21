@@ -45,7 +45,7 @@ func NewManager(ctx context.Context, logger *logrus.Entry) (*manager, error) {
 	if sock_dir == "" {
 		sock_dir = "/var/run" // TODO: why?
 	}
-	socket := "unix:" + sock_dir + "/podman/podman.sock"
+	socket := "unix://" + sock_dir + "/podman/podman.sock"
 
 	ctx, err := bindings.NewConnection(ctx, socket)
 	if err != nil {
@@ -170,6 +170,12 @@ func (m *manager) Deploy(cfg *config.Setup) error {
 	m.cancelMonitoring = monitoringCancel
 
 	m.logger.Info("Starting database.")
+	if _, err := images.Pull(m.client, map[string]string{
+		"crdb": crdbImage,
+		"etcd3": etcdImage,
+	}[cfg.StorageBackend], &images.PullOptions{Policy: pointer.String("missing")}); err != nil {
+		return fmt.Errorf("could not pull database image: %w", err)
+	}
 	var dbStartErr error
 	var dbServers string
 	if cfg.StorageBackend == "crdb" {
@@ -425,7 +431,7 @@ func (m *manager) deployMultiNodeCRDB(ctx context.Context, outputDir string) (st
 	var join []string
 	var ports []int
 	for _, idx := range members {
-		clientPort := clientPortBase+idx
+		clientPort := clientPortBase + idx
 		join = append(join, fmt.Sprintf("localhost:%d", clientPort))
 		ports = append(ports, clientPort)
 	}
@@ -485,7 +491,7 @@ func (m *manager) deploySingleNodeETCD(ctx context.Context, outputDir string) (s
 	s.Command = []string{
 		"etcd",
 		"--enable-pprof",
-		"--quota-backend-bytes", "6710886400",
+		"--quota-backend-bytes", "9710886400",
 	}
 	if err := m.startContainer("etcd", s); err != nil {
 		return "", err
@@ -547,7 +553,7 @@ func (m *manager) deployMultiNodeETCD(ctx context.Context, outputDir string) (st
 			"--initial-cluster", strings.Join(initialCluster, ","),
 			"--initial-cluster-state", "new",
 			"--enable-pprof",
-			"--quota-backend-bytes", "6710886400",
+			"--quota-backend-bytes", "9710886400",
 		}
 		if err := m.startContainer("etcd", s); err != nil {
 			return "", err

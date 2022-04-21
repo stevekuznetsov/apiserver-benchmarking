@@ -196,20 +196,19 @@ def plot_request_times(ax, df):
     first = True
     dbIdx = 0
     for db in df.db.unique():
-        values = df.loc[(df['db'] == db) & (df['method'] == method)]
-        midpoint = values.duration.median()
+        # values = df.loc[(df['db'] == db) & (df['method'] == method)]
         if first:
             layout_args = {
-                "x": idx + 0.1,
-                "ha": "left",
+                "x": idx - 0.35,
+                "ha": "right",
             }
         else:
             layout_args = {
-                "x": idx - 0.1,
-                "ha": "right",
+                "x": idx + 0.45,
+                "ha": "left",
             }
         ax.text(
-            y=midpoint, s=db, fontsize=18, color=sns.color_palette()[dbIdx],
+            y=125, s=db, fontsize=18, color=sns.color_palette()[dbIdx],
             va="center", path_effects=path_effects, **layout_args
         )
         dbIdx += 1
@@ -252,30 +251,48 @@ def plot_resource_usage(ax, df):
         ytickformat=lambda y: format(y),
         title="<size:18><weight:bold>Working Set,</> bytes</>"
     )
-
     path_effects = [withStroke(linewidth=10, foreground="white")]
 
-    idx = 0
-    for db in df.db.unique():
-        values = df.loc[df['db'] == db]
-        midpoint = values[values['timestamp'] == values['timestamp'].quantile(q=0.45, interpolation='nearest')]
-        va = {
-            "crdb": "top",
-            "etcd3": "bottom",
-        }
-        multiplier = {
-            "crdb": 0.9,
-            "etcd3": 1.1,
-        }
-        ax[0].text(
-            midpoint.timestamp, multiplier[db] * midpoint.cpu, db, fontsize=18,
-            va=va[db], ha="left", path_effects=path_effects, color=sns.color_palette()[idx]
-        )
-        ax[1].text(
-            midpoint.timestamp, multiplier[db] * midpoint.mem, db, fontsize=18,
-            va=va[db], ha="left", path_effects=path_effects, color=sns.color_palette()[idx]
-        )
-        idx += 1
+    timestamps = df.loc[df['db'] == "etcd3"].timestamp
+    timestamp = timestamps[timestamps.size - 90]
+    ax[0].text(
+        timestamp, 6.2, "crdb", fontsize=18,
+        va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
+    )
+    ax[1].text(
+        timestamp, 3.2 * gigabyte, "crdb", fontsize=18,
+        va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
+    )
+    ax[0].text(
+        timestamp, 1, "etcd3", fontsize=18,
+        va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
+    )
+    ax[1].text(
+        timestamp, 7 * gigabyte, "etcd3", fontsize=18,
+        va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
+    )
+
+    # idx = 0
+    # for db in df.db.unique():
+    #     values = df.loc[df['db'] == db]
+    #     midpoint = values[values['timestamp'] == values['timestamp'].quantile(q=0.8, interpolation='nearest')]
+    #     va = {
+    #         "crdb": "top",
+    #         "etcd3": "bottom",
+    #     }
+    #     multiplier = {
+    #         "crdb": 0.8,
+    #         "etcd3": 1.2,
+    #     }
+    #     ax[0].text(
+    #         midpoint.timestamp, multiplier[db] * midpoint.cpu, db, fontsize=18,
+    #         va=va[db], ha="left", path_effects=path_effects, color=sns.color_palette()[idx]
+    #     )
+    #     ax[1].text(
+    #         midpoint.timestamp, multiplier[db] * midpoint.mem, db, fontsize=18,
+    #         va=va[db], ha="left", path_effects=path_effects, color=sns.color_palette()[idx]
+    #     )
+    #     idx += 1
 
 
 fig, axes = plt.subplot_mosaic([['left', 'upper right'],
@@ -305,7 +322,6 @@ fig.savefig(
     os.path.join(output_figure_dir, "comparative_plot.png"),
     dpi=300)
 plt.show()
-
 
 # TODO: we could plot histograms of CPU usage/s and mem load, as a function of db size - would be cool to see
 # TODO: we can also do the same for aggregate request response times? or overall running time?

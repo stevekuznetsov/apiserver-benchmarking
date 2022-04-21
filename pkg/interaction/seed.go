@@ -11,6 +11,10 @@ import (
 )
 
 func Seed(ctx context.Context, im *interactionManager, cfg *config.Seed) error {
+	im.d = &configmapDelegate{
+		fillSize: im.fillSize,
+		client:   im.client,
+	}
 	wg := &sync.WaitGroup{}
 	operations := make(chan struct{})
 	for i := 0; i < cfg.Parallelism; i++ {

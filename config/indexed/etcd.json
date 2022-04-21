@@ -1,7 +1,7 @@
 {
   "setup": {
     "storage_backend": "etcd3",
-    "output_dir": "/tmp/benchmark/etcd3-index"
+    "output_dir": "/tmp/benchmark/indexed/etcd3"
   },
   "interact": {
     "selectivity": {

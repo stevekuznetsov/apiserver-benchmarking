@@ -6,7 +6,7 @@
   },
   "setup": {
     "storage_backend": "crdb",
-    "output_dir": "/tmp/benchmark/crdb"
+    "output_dir": "/tmp/benchmark/throughput/crdb"
   },
   "interact": {
     "throughput": {

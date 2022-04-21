@@ -1,6 +1,0 @@
-{
-  "setup": {
-    "output_dir": "/tmp/benchmark/crdb",
-    "storage_backend": "crdb"
-  }
-}

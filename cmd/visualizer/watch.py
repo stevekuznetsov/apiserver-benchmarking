@@ -47,18 +47,38 @@ for data_dir in sys.argv[1:3]:
 
 def parse_request_times(data):
     dbs = []
-    listSizes = []
     durations = []
     for id in data:
-        for listSize in data[id]["indexedMetrics"]["list"]:
-            if len(data[id]["indexedMetrics"]["list"][listSize]) == 0:
+        cutoff = np.quantile(data[id]["metrics"]["watch"], 0.95)
+        for value in data[id]["metrics"]["watch"]:
+            if value >= cutoff:
                 continue
-            for value in data[id]["indexedMetrics"]["list"][listSize]:
-                dbs.append(id)
-                listSizes.append(listSize)
-                durations.append(np.log10(value))
+            dbs.append(id)
+            durations.append(value)
 
-    return pd.DataFrame({"db": dbs, "listSize": listSizes, "duration": durations})
+    return pd.DataFrame({"db": dbs, "duration": durations})
+
+
+def parse_watch_data(data):
+    dbs = []
+    timestamps = []
+    rates = []
+    for id in data:
+        base = np.datetime64(data[id]["watchTimestamps"][0].removesuffix("Z"))
+        times = [(np.datetime64(item.removesuffix("Z")) - base) / np.timedelta64(1, 's') for item in
+                 data[id]["watchTimestamps"]]
+
+        grad = np.gradient(
+            data[id]["watchCounts"],
+            times
+        )
+        weight = 10
+        avg = np.convolve(grad, np.ones(weight), 'same') / weight
+        rates.extend(avg)
+        timestamps.extend(times)
+        dbs.extend([id for item in grad])
+
+    return pd.DataFrame({"db": dbs, "timestamp": timestamps, "rate": rates})
 
 
 def annotate_axis(ax, xticks, xticklabels, max_y, max_x, ytickformat, title):
@@ -87,7 +107,8 @@ def annotate_axis(ax, xticks, xticklabels, max_y, max_x, ytickformat, title):
     ax.spines["right"].set_visible(False)
     ax.spines["top"].set_visible(False)
     ax.spines["left"].set_visible(False)
-    ax.get_legend().remove()
+    if ax.get_legend() is not None:
+        ax.get_legend().remove()
 
     ax.spines["bottom"].set_lw(1.2)
     ax.spines["bottom"].set_capstyle("butt")
@@ -101,61 +122,51 @@ def annotate_axis(ax, xticks, xticklabels, max_y, max_x, ytickformat, title):
     )
 
 
-one = 1
-thousand = 1000 * one
-million = 1000 * thousand
-billion = 1000 * million
-
-
-def formatCount(count):
-    if count < thousand:
-        return str(count)
-    elif thousand <= count < million:
-        return '{:.0f}'.format(count / thousand) + 'k'
-    elif million <= count < billion:
-        return '{:.0f}'.format(count / million) + 'M'
-    else:
-        return '{:.0f}'.format(count / billion) + 'B'
-
-
 def plot_request_times(ax, df):
-    sns.violinplot(x="listSize", y="duration", hue='db', data=df, split=True,
+    df["dummy"] = ""
+    sns.violinplot(x="dummy", y="duration", hue='db', data=df, split=True,
                    ax=ax, scale="width", inner=None, hue_order=df.db.unique())
     annotate_axis(
         ax=ax,
-        xticks=[n for n in range(len(df.listSize.unique()))],
-        xticklabels=[formatCount(int(metric)) for metric in df.listSize.unique()],
+        xticks=[],
+        xticklabels=[],
         max_y=df.duration.max(),
-        max_x=len(df.listSize.unique()),
-        ytickformat=lambda y: format(y),
-        title="<size:18><weight:bold>Request Response Times,</> seconds</>"
+        max_x=1,
+        ytickformat=lambda y: "{:,.0f}".format(y/1e6),
+        title="<size:18><weight:bold>Watch Event Delivery Delay,</> milliseconds</>"
     )
 
     path_effects = [withStroke(linewidth=10, foreground="white")]
-    idx = len(df.listSize.unique()) - 2
-    listSize = df.listSize.unique()[idx]
-    first = True
-    dbIdx = 0
-    for db in df.db.unique():
-        values = df.loc[(df['db'] == db) & (df['listSize'] == listSize)]
-        if first:
-            layout_args = {
-                "x": idx - .4,
-                "y": np.log10(15 * second),
-                "ha": "right",
-            }
-        else:
-            layout_args = {
-                "x": idx + .4,
-                "y": np.log10(9 * second),
-                "ha": "left",
-            }
-        ax.text(
-            s=db, fontsize=18, color=sns.color_palette()[dbIdx],
-            va="center", path_effects=path_effects, **layout_args
-        )
-        dbIdx += 1
-        first = False
+    ax.text(
+        .45, 130 * millisecond, "crdb", fontsize=18,
+        va="center", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
+    )
+    ax.text(
+        -.7, 0, "etcd3", fontsize=18,
+        va="center", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
+    )
+    # idx = 0
+    # first = True
+    # dbIdx = 0
+    # for db in df.db.unique():
+    #     values = df.loc[(df['db'] == db)]
+    #     midpoint = values.duration.median()
+    #     if first:
+    #         layout_args = {
+    #             "x": idx - 0.4,
+    #             "ha": "right",
+    #         }
+    #     else:
+    #         layout_args = {
+    #             "x": idx + 0.4,
+    #             "ha": "left",
+    #         }
+    #     ax.text(
+    #         y=midpoint, s=db, fontsize=18, color=sns.color_palette()[dbIdx],
+    #         va="center", path_effects=path_effects, **layout_args
+    #     )
+    #     dbIdx += 1
+    #     first = False
 
 
 nanosecond = 1
@@ -165,7 +176,6 @@ second = 1000 * millisecond
 
 
 def format(nanoseconds):
-    nanoseconds = np.power(10, nanoseconds)
     if second <= nanoseconds:
         return '{:.0f}'.format(nanoseconds / second) + 's'
     elif millisecond <= nanoseconds < second:
@@ -221,7 +231,6 @@ def parse_singleton_data(data):
             timestamps.extend(sub_ts)
 
     df = pd.DataFrame({"db": dbs, "cpu": cpus, "mem": mems, "timestamp": timestamps})
-    df.info()
     return df
 
 
@@ -258,18 +267,16 @@ def parse_ha_data(data):
 
         dbs.extend([id for item in timestamp_seconds])
         timestamps.extend(timestamp_seconds)
-        weight = 10
-        avg = np.convolve(cpu_rate, np.ones(weight), 'same') / weight
-        cpus.extend(avg)
+        cpus.extend(cpu_rate)
         mems.extend(mem.values)
 
     df = pd.DataFrame({"db": dbs, "cpu": cpus, "mem": mems, "timestamp": timestamps})
-    df.info()
     return df
 
 
 def plot_resource_usage(ax, df):
     sns.lineplot(x="timestamp", y="cpu", hue="db", data=df, ax=ax[0])
+    ax[0].set_ylim(bottom=0)
     annotate_axis(
         ax=ax[0],
         xticks=[],
@@ -281,6 +288,7 @@ def plot_resource_usage(ax, df):
     )
 
     sns.lineplot(x="timestamp", y="mem", hue="db", data=df, ax=ax[1])
+    ax[1].set_ylim(bottom=0)
     annotate_axis(
         ax=ax[1],
         xticks=[],
@@ -293,21 +301,21 @@ def plot_resource_usage(ax, df):
 
     path_effects = [withStroke(linewidth=10, foreground="white")]
     timestamps = df.loc[df['db'] == "etcd3"].timestamp
-    timestamp = timestamps[timestamps.size - 190]
+    timestamp = timestamps[timestamps.size - 70]
     ax[0].text(
-        timestamp, 4.2, "crdb", fontsize=18,
-        va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
+        timestamp, 1.1, "crdb", fontsize=18,
+        va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
     )
     ax[1].text(
-        timestamp, 7 * gigabyte, "crdb", fontsize=18,
+        timestamp, .9 * gigabyte, "crdb", fontsize=18,
         va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
     )
     ax[0].text(
-        timestamp, 1.8, "etcd3", fontsize=18,
-        va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
+        timestamp, 0.5, "etcd3", fontsize=18,
+        va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
     )
     ax[1].text(
-        timestamp, 17 * gigabyte, "etcd3", fontsize=18,
+        timestamp, 2.75 * gigabyte, "etcd3", fontsize=18,
         va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
     )
     # idx = 0
@@ -333,33 +341,81 @@ def plot_resource_usage(ax, df):
     #     idx += 1
 
 
+def plot_watch_throughput(ax, df):
+    sns.lineplot(x="timestamp", y="rate", hue="db", data=df, ax=ax)
+    ax.set_ylim(bottom=0)
+    annotate_axis(
+        ax=ax,
+        xticks=[],
+        xticklabels=[],
+        max_y=df.rate.max(),
+        max_x=df.timestamp.max() * 1.05,
+        ytickformat=lambda y: "{:.0f}".format(y/1000),
+        title="<size:18><weight:bold>Watch Event Throughput,</> kHz</>"
+    )
+
+    path_effects = [withStroke(linewidth=10, foreground="white")]
+    timestamps = df.loc[df['db'] == "etcd3"].timestamp
+    timestamp = timestamps[timestamps.size - 400]
+    ax.text(
+        timestamp, 4000, "crdb", fontsize=18,
+        va="top", ha="left", path_effects=path_effects, color=sns.color_palette()[1]
+    )
+    ax.text(
+        timestamp, 8000, "etcd3", fontsize=18,
+        va="bottom", ha="left", path_effects=path_effects, color=sns.color_palette()[0]
+    )
+    # idx = 0
+    # for db in df.db.unique():
+    #     values = df.loc[df['db'] == db]
+    #     midpoint = values[values['timestamp'] == values['timestamp'].quantile(q=0.45, interpolation='nearest')]
+    #     va = {
+    #         "crdb": "top",
+    #         "etcd3": "bottom",
+    #     }
+    #     multiplier = {
+    #         "crdb": 0.9,
+    #         "etcd3": 1.1,
+    #     }
+    #     ax.text(
+    #         midpoint.timestamp, multiplier[db] * midpoint.rate, db, fontsize=18,
+    #         va=va[db], ha="left", path_effects=path_effects, color=sns.color_palette()[idx]
+    #     )
+    #     idx += 1
+
+
 fig, axes = plt.subplot_mosaic([['left', 'upper right'],
+                                ['left', 'middle right'],
                                 ['left', 'lower right']],
-                               figsize=(12, 7.2), constrained_layout=True)
+                               figsize=(12, 10.8), constrained_layout=True)
 plot_request_times(axes["left"], parse_request_times(events_data))
-plot_resource_usage([axes["upper right"], axes["lower right"]], parse_cadvisor_data(cadvisor_data))
+plot_resource_usage([axes["upper right"], axes["middle right"]], parse_cadvisor_data(cadvisor_data))
+plot_watch_throughput(axes["lower right"], parse_watch_data(events_data))
 fig.subplots_adjust(
     left=0, right=1,
-    top=0.825, bottom=0.15,
+    top=0.8925, bottom=0.08,
     hspace=0.25, wspace=0.05
 )
 fig.set_facecolor("w")
-title = "<size:22><weight:bold>LIST Performance as a Function of Selectivity\n</></>" + \
+title = "<size:22><weight:bold>Highly Concurrent Watch Performance\n</></>" + \
         "<size:20>Comparing etcd3 and crdb as backing stores</>"
 flexitext(0, .98, title, va="top", xycoords='figure fraction', ax=fig.axes[0])
 
-source = '{} initial database size comprised of {} objects.\n' \
-         '{} requests across {} parallel workers using field selectors at varying levels of selectivity.'.format(
+source = '{} initial database size. {} concurrent watchers selecting 1/{}th of total objects.\n' \
+         '{} of updates across {} parallel workers.\n' \
+         'Event delivery delay measured between the completion of a mutating ' \
+         'RPC and observation of that change in the watch stream.'.format(
     formatBytes(
-        config_data["crdb"]["interact"]["selectivity"]["count"] *
-        config_data["crdb"]["interact"]["selectivity"]["fill_size"]),
-    formatCount(config_data["crdb"]["interact"]["selectivity"]["count"]),
-    config_data["crdb"]["interact"]["operations"],
+        config_data["crdb"]["interact"]["watch"]["count"] *
+        config_data["crdb"]["interact"]["watch"]["fill_size"]),
+    config_data["crdb"]["interact"]["watch"]["partitions"] *
+    config_data["crdb"]["interact"]["watch"]["watchers_per_partition"],
+    config_data["crdb"]["interact"]["watch"]["partitions"],
+    config_data["crdb"]["interact"]["watch"]["duration"],
     config_data["crdb"]["interact"]["parallelism"]
 )
 fig.text(0.01, 0.02, source, color="#a2a2a2", fontsize=12)
 fig.savefig(
-    os.path.join(output_figure_dir, "indexed_requests.png"),
+    os.path.join(output_figure_dir, "watch_events.png"),
     dpi=300)
-plt.show()
 plt.show()

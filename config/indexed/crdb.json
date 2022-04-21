@@ -1,7 +1,7 @@
 {
   "setup": {
     "storage_backend": "crdb",
-    "output_dir": "/tmp/benchmark/crdb-index"
+    "output_dir": "/tmp/benchmark/indexed/crdb"
   },
   "interact": {
     "selectivity": {

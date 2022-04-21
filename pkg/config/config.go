@@ -1,5 +1,9 @@
 package config
 
+import (
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
 type Config struct {
 	// Setup configures the infrastructure on which we will be running.
 	Setup *Setup `json:"setup,omitempty"`
@@ -42,6 +46,9 @@ type Interact struct {
 	// Selectivity configures the different types of requests to make when testing indexed selectivity
 	Selectivity *Selectivity `json:"selectivity,omitempty"`
 
+	// Watch configures the tests for watch performance and throughput
+	Watch *Watch `json:"watch,omitempty"`
+
 	// Parallelism determines how many parallel client connections to use
 	Parallelism int `json:"parallelism,omitempty"`
 	// Operations is the total number of client operations to execute
@@ -61,4 +68,16 @@ type Selectivity struct {
 
 	// Minimum is the size of the most selective set we will query for.
 	Minimum int `json:"minimum,omitempty"`
+}
+
+type Watch struct {
+	*Seed `json:",inline"`
+
+	// Partitions determines how we break up the objects we're creating.
+	Partitions int `json:"partitions,omitempty"`
+	// WatchersPerPartition determines the denisty of watchers
+	WatchersPerPartition int `json:"watchers_per_partition,omitempty"`
+
+	// Duration is how long we want to run this test
+	Duration v1.Duration `json:"duration,omitempty"`
 }
