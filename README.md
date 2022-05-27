@@ -36,7 +36,7 @@ We require an experimental build of `cAdvisor` to support `podman` containers. B
 ```
 $ git clone git@github.com:google/cadvisor.git
 $ cd cadvisor
-$ git pull origin/pull/3021/merge:podman
+$ git pull origin pull/3021/merge:podman
 $ git checkout podman
 $ make build
 $ chmod +x cadvisor
